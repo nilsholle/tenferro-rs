@@ -32,6 +32,8 @@ pub use error::{Error, Result};
 pub use executor::{XlaExecutor, XlaExecutorOptions};
 #[cfg(feature = "pjrt")]
 pub use pjrt::PjrtPlugin;
+#[cfg(feature = "pjrt")]
+pub use pjrt::{DeviceBuffer, HostScalar, PjrtProgram, PjrtSession};
 pub use stablehlo::{StableHloModule, StableHloModuleFingerprint};
 
 /// Environment variable used for the default PJRT plugin path.
