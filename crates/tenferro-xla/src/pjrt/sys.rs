@@ -46,7 +46,7 @@ pub(crate) struct PJRT_Api {
     pub(crate) pjrt_device_local_hardware_id: *const c_void,
     pub(crate) pjrt_device_addressable_memories: *const c_void,
     pub(crate) pjrt_device_default_memory: *const c_void,
-    pub(crate) pjrt_device_memory_stats: *const c_void,
+    pub(crate) pjrt_device_memory_stats: PjrtDeviceMemoryStats,
     pub(crate) pjrt_memory_id: *const c_void,
     pub(crate) pjrt_memory_kind: *const c_void,
     pub(crate) pjrt_memory_debug_string: *const c_void,
@@ -483,3 +483,37 @@ pub(crate) type PjrtBufferDestroy =
     unsafe extern "C" fn(*mut PJRT_Buffer_Destroy_Args) -> *mut PJRT_Error;
 pub(crate) type PjrtBufferToHostBuffer =
     unsafe extern "C" fn(*mut PJRT_Buffer_ToHostBuffer_Args) -> *mut PJRT_Error;
+
+/// `PJRT_Device_MemoryStats_Args` of `pjrt_c_api.h`: allocator statistics of
+/// one device. Only `bytes_in_use` is mandatory for a plugin; the others are
+/// valid when their `*_is_set` flag is true.
+#[repr(C)]
+pub(crate) struct PJRT_Device_MemoryStats_Args {
+    pub(crate) struct_size: usize,
+    pub(crate) extension_start: *mut PJRT_Extension_Base,
+    pub(crate) device: *mut PJRT_Device,
+    pub(crate) bytes_in_use: i64,
+    pub(crate) peak_bytes_in_use: i64,
+    pub(crate) peak_bytes_in_use_is_set: bool,
+    pub(crate) num_allocs: i64,
+    pub(crate) num_allocs_is_set: bool,
+    pub(crate) largest_alloc_size: i64,
+    pub(crate) largest_alloc_size_is_set: bool,
+    pub(crate) bytes_limit: i64,
+    pub(crate) bytes_limit_is_set: bool,
+    pub(crate) bytes_reserved: i64,
+    pub(crate) bytes_reserved_is_set: bool,
+    pub(crate) peak_bytes_reserved: i64,
+    pub(crate) peak_bytes_reserved_is_set: bool,
+    pub(crate) bytes_reservable_limit: i64,
+    pub(crate) bytes_reservable_limit_is_set: bool,
+    pub(crate) largest_free_block_bytes: i64,
+    pub(crate) largest_free_block_bytes_is_set: bool,
+    pub(crate) pool_bytes: i64,
+    pub(crate) pool_bytes_is_set: bool,
+    pub(crate) peak_pool_bytes: i64,
+    pub(crate) peak_pool_bytes_is_set: bool,
+}
+
+pub(crate) type PjrtDeviceMemoryStats =
+    unsafe extern "C" fn(*mut PJRT_Device_MemoryStats_Args) -> *mut PJRT_Error;
