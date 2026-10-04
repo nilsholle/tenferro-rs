@@ -30,6 +30,8 @@ use tenferro_tensor::col_major_strides;
 const ELEMENTWISE_FUSION_OP: &str = "execute_elementwise_fusion";
 
 const ELEMENTWISE_FUSION_MIN_ELEMENTS: usize = 16 * 1024;
+/// Largest operand count the strided fused kernels accept.
+const MAX_FUSED_INPUTS: usize = 4;
 
 fn validate_elementwise_fusion_inputs(
     inputs: &[&Tensor],
@@ -284,6 +286,13 @@ pub fn elementwise_fusion_with_pool(
         return Ok(None);
     }
     if inputs.is_empty() {
+        return Ok(None);
+    }
+    // fastatomstruct patch: the strided fused kernels take at most
+    // MAX_FUSED_INPUTS operands. A larger region used to fail at run time with
+    // "unsupported arity N; maximum supported arity is 4"; decline it instead
+    // so the caller executes the region op by op.
+    if inputs.len() > MAX_FUSED_INPUTS {
         return Ok(None);
     }
     if plan_uses_unfused_op(plan) {
