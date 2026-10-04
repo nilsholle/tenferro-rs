@@ -14,11 +14,11 @@ pub type BoxError = Box<dyn StdError + Send + Sync + 'static>;
 /// use tenferro_runtime::{DType, GraphCompiler, TracedTensor};
 /// use tenferro_xla::{lower_compiled_to_stablehlo, Error};
 ///
-/// let x = TracedTensor::input_symbolic_shape(DType::I64, 1).unwrap();
+/// let x = TracedTensor::input_symbolic_shape(DType::C64, 1).unwrap();
 /// let mut compiler = GraphCompiler::new();
 /// let y = x.neg().unwrap();
 /// let program = compiler
-///     .compile_with_input_specs(&y, &[(&x, DType::I64, &[2])])
+///     .compile_with_input_specs(&y, &[(&x, DType::C64, &[2])])
 ///     .unwrap();
 /// let err = lower_compiled_to_stablehlo(&program).unwrap_err();
 /// assert!(matches!(err, Error::UnsupportedDType { .. }));

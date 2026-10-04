@@ -52,12 +52,12 @@ impl ExtensionOp for RuntimeOnlyExtension {
 }
 
 #[test]
-fn rejects_i64_dtype_before_emitting_mlir() {
-    let x = TracedTensor::input_symbolic_shape(DType::I64, 1).unwrap();
+fn rejects_complex_dtype_before_emitting_mlir() {
+    let x = TracedTensor::input_symbolic_shape(DType::C64, 1).unwrap();
     let y = (&x + &x).unwrap();
     let mut compiler = GraphCompiler::new();
     let program = compiler
-        .compile_with_input_specs(&y, &[(&x, DType::I64, &[2])])
+        .compile_with_input_specs(&y, &[(&x, DType::C64, &[2])])
         .unwrap();
 
     let err = lower_to_stablehlo(program.program()).unwrap_err();
@@ -65,7 +65,7 @@ fn rejects_i64_dtype_before_emitting_mlir() {
     assert!(matches!(
         err,
         Error::UnsupportedDType {
-            dtype: DType::I64,
+            dtype: DType::C64,
             ..
         }
     ));
@@ -95,16 +95,16 @@ fn rejects_dynamic_upper_bound_extents() {
 
 #[test]
 fn rejects_unsupported_static_op() {
-    let x = TracedTensor::input_symbolic_shape(DType::F64, 1).unwrap();
-    let y = x.maximum(&x).unwrap();
+    let x = TracedTensor::input_symbolic_shape(DType::F64, 2).unwrap();
+    let y = x.tril(0).unwrap();
     let mut compiler = GraphCompiler::new();
     let program = compiler
-        .compile_with_input_specs(&y, &[(&x, DType::F64, &[2])])
+        .compile_with_input_specs(&y, &[(&x, DType::F64, &[2, 2])])
         .unwrap();
 
     let err = lower_to_stablehlo(program.program()).unwrap_err();
 
-    assert!(matches!(err, Error::UnsupportedOp { op: "Maximum", .. }));
+    assert!(matches!(err, Error::UnsupportedOp { op: "Tril", .. }));
 }
 
 #[test]
