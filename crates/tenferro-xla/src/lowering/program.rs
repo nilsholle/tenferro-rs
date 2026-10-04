@@ -176,16 +176,16 @@ fn lower_semantic_operation(
             lower_constant(*dtype, bytes, &output_ty, emitter)?
         }
         SemanticOpRef::Core(CoreSemanticOp::Add) => {
-            lower_same_type_binary("stablehlo.add", &input_values, &output_ty, emitter)?
+            extra::lower_binary("stablehlo.add", &input_values, &output_ty, emitter)?
         }
         SemanticOpRef::Core(CoreSemanticOp::Mul) => {
-            lower_same_type_binary("stablehlo.multiply", &input_values, &output_ty, emitter)?
+            extra::lower_binary("stablehlo.multiply", &input_values, &output_ty, emitter)?
         }
         SemanticOpRef::Core(CoreSemanticOp::Neg) => {
             lower_unary("stablehlo.negate", &input_values, &output_ty, emitter)?
         }
         SemanticOpRef::Core(CoreSemanticOp::Div) => {
-            lower_same_type_binary("stablehlo.divide", &input_values, &output_ty, emitter)?
+            extra::lower_binary("stablehlo.divide", &input_values, &output_ty, emitter)?
         }
         SemanticOpRef::Core(CoreSemanticOp::Abs) => {
             lower_unary("stablehlo.abs", &input_values, &output_ty, emitter)?
@@ -212,7 +212,7 @@ fn lower_semantic_operation(
             lower_unary("stablehlo.rsqrt", &input_values, &output_ty, emitter)?
         }
         SemanticOpRef::Core(CoreSemanticOp::Pow) => {
-            lower_same_type_binary("stablehlo.power", &input_values, &output_ty, emitter)?
+            extra::lower_binary("stablehlo.power", &input_values, &output_ty, emitter)?
         }
         SemanticOpRef::Core(CoreSemanticOp::Expm1) => lower_unary(
             "stablehlo.exponential_minus_one",
@@ -244,6 +244,77 @@ fn lower_semantic_operation(
         SemanticOpRef::Core(CoreSemanticOp::DotGeneral { config }) => {
             lower_dot_general(config, &input_values, &output_ty, emitter)?
         }
+        SemanticOpRef::Core(CoreSemanticOp::Sub) => {
+            extra::lower_binary("stablehlo.subtract", &input_values, &output_ty, emitter)?
+        }
+        SemanticOpRef::Core(CoreSemanticOp::Rem) => {
+            extra::lower_binary("stablehlo.remainder", &input_values, &output_ty, emitter)?
+        }
+        SemanticOpRef::Core(CoreSemanticOp::Maximum) => {
+            extra::lower_binary("stablehlo.maximum", &input_values, &output_ty, emitter)?
+        }
+        SemanticOpRef::Core(CoreSemanticOp::Minimum) => {
+            extra::lower_binary("stablehlo.minimum", &input_values, &output_ty, emitter)?
+        }
+        SemanticOpRef::Core(CoreSemanticOp::Sign) => {
+            lower_unary("stablehlo.sign", &input_values, &output_ty, emitter)?
+        }
+        SemanticOpRef::Core(CoreSemanticOp::Conj) => {
+            // Real dtypes only (complex is rejected by the dtype check).
+            require_input_count("conj", &input_values, 1)?;
+            input_values[0].clone()
+        }
+        SemanticOpRef::Core(CoreSemanticOp::Compare(dir)) => {
+            extra::lower_compare(dir, &input_values, &output_ty, emitter)?
+        }
+        SemanticOpRef::Core(CoreSemanticOp::Select) => {
+            extra::lower_select(&input_values, &output_ty, emitter)?
+        }
+        SemanticOpRef::Core(CoreSemanticOp::Clamp) => {
+            extra::lower_clamp(&input_values, &output_ty, emitter)?
+        }
+        SemanticOpRef::Core(CoreSemanticOp::Slice(config)) => {
+            extra::lower_slice(config, &input_values, &output_ty, emitter)?
+        }
+        SemanticOpRef::Core(CoreSemanticOp::Pad(config)) => {
+            extra::lower_pad(config, &input_values, &output_ty, emitter)?
+        }
+        SemanticOpRef::Core(CoreSemanticOp::Concatenate { axis, .. }) => {
+            extra::lower_concatenate(*axis, &input_values, &output_ty, emitter)?
+        }
+        SemanticOpRef::Core(CoreSemanticOp::Reverse { axes }) => {
+            extra::lower_reverse(axes, &input_values, &output_ty, emitter)?
+        }
+        SemanticOpRef::Core(CoreSemanticOp::Gather(config)) => {
+            extra::lower_gather(config, &input_values, &output_ty, emitter)?
+        }
+        SemanticOpRef::Core(CoreSemanticOp::Scatter(config)) => {
+            extra::lower_scatter(config, &input_values, &output_ty, emitter)?
+        }
+        SemanticOpRef::Core(CoreSemanticOp::ReduceProd { axes }) => extra::lower_reduce(
+            "stablehlo.multiply",
+            1.0,
+            axes,
+            &input_values,
+            &output_ty,
+            emitter,
+        )?,
+        SemanticOpRef::Core(CoreSemanticOp::ReduceMax { axes }) => extra::lower_reduce(
+            "stablehlo.maximum",
+            f64::NEG_INFINITY,
+            axes,
+            &input_values,
+            &output_ty,
+            emitter,
+        )?,
+        SemanticOpRef::Core(CoreSemanticOp::ReduceMin { axes }) => extra::lower_reduce(
+            "stablehlo.minimum",
+            f64::INFINITY,
+            axes,
+            &input_values,
+            &output_ty,
+            emitter,
+        )?,
         SemanticOpRef::Extension(_) => {
             return Err(Error::InvalidProgram {
                 message: "extension semantic operation reached builtin lowering arm".to_string(),
@@ -654,6 +725,25 @@ fn lower_constant(
             })?;
             format_f64(f64::from_le_bytes(bytes))
         }
+        DType::I32 => {
+            let bytes: [u8; 4] = bytes.try_into().map_err(|_| Error::InvalidProgram {
+                message: format!("I32 constant expected 4 bytes, got {}", bytes.len()),
+            })?;
+            i32::from_le_bytes(bytes).to_string()
+        }
+        DType::I64 => {
+            let bytes: [u8; 8] = bytes.try_into().map_err(|_| Error::InvalidProgram {
+                message: format!("I64 constant expected 8 bytes, got {}", bytes.len()),
+            })?;
+            i64::from_le_bytes(bytes).to_string()
+        }
+        DType::Bool => {
+            if bytes.first().copied().unwrap_or(0) != 0 {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }
+        }
         other => {
             return Err(Error::UnsupportedDType {
                 dtype: other,
@@ -734,11 +824,42 @@ fn lower_convert(
 
 fn lower_reshape(inputs: &[Value], output_ty: &TensorType, emitter: &mut Emitter) -> Result<Value> {
     require_input_count("stablehlo.reshape", inputs, 1)?;
+    // tenferro reshapes reinterpret the *column-major* element order, while
+    // `stablehlo.reshape` is row-major. The two agree only when the sequence
+    // of non-unit extents is unchanged (pure insertion/removal of unit axes);
+    // otherwise reverse the axes, reshape to the reversed target shape, and
+    // reverse back.
+    let non_unit =
+        |shape: &[usize]| -> Vec<usize> { shape.iter().copied().filter(|&dim| dim != 1).collect() };
+    let input = &inputs[0];
+    if non_unit(&input.ty.shape) == non_unit(&output_ty.shape) {
+        return emit_reshape(input, output_ty, emitter);
+    }
+    let reversed = if input.ty.shape.len() > 1 {
+        let perm: Vec<usize> = (0..input.ty.shape.len()).rev().collect();
+        let shape: Vec<usize> = input.ty.shape.iter().rev().copied().collect();
+        let ty = TensorType::new(shape, input.ty.dtype, "reshape input")?;
+        emit_transpose(input, &perm, &ty, emitter)?
+    } else {
+        input.clone()
+    };
+    let target_reversed: Vec<usize> = output_ty.shape.iter().rev().copied().collect();
+    let mid_ty = TensorType::new(target_reversed, output_ty.dtype, "reshape output")?;
+    let mid = emit_reshape(&reversed, &mid_ty, emitter)?;
+    if output_ty.shape.len() > 1 {
+        let perm: Vec<usize> = (0..output_ty.shape.len()).rev().collect();
+        emit_transpose(&mid, &perm, output_ty, emitter)
+    } else {
+        Ok(mid)
+    }
+}
+
+fn emit_reshape(input: &Value, output_ty: &TensorType, emitter: &mut Emitter) -> Result<Value> {
     let name = emitter.value();
     emitter.line(format!(
         "{name} = stablehlo.reshape {} : ({}) -> {}",
-        inputs[0].name,
-        format_tensor_type(&inputs[0].ty),
+        input.name,
+        format_tensor_type(&input.ty),
         format_tensor_type(output_ty)
     ));
     Ok(Value {
@@ -789,7 +910,7 @@ fn lower_reduce_sum(
     let init = emitter.value();
     emitter.line(format!(
         "{init} = stablehlo.constant dense<{}> : {}",
-        format_float(0.0),
+        extra::scalar_literal(output_ty.dtype, 0.0),
         format_tensor_type(&init_ty)
     ));
     let name = emitter.value();
@@ -992,7 +1113,7 @@ fn format_f32(value: f32) -> String {
 
 fn format_f64(value: f64) -> String {
     if value.is_finite() {
-        format!("{value:.8e}")
+        format!("{value:.17e}")
     } else if value.is_nan() {
         format!("0x{:016x}", value.to_bits())
     } else if value.is_sign_negative() {
@@ -1001,6 +1122,8 @@ fn format_f64(value: f64) -> String {
         "0x7ff0000000000000".to_string()
     }
 }
+
+mod extra;
 
 #[cfg(test)]
 mod tests;
