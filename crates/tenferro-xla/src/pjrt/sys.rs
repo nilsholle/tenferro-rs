@@ -92,7 +92,39 @@ pub(crate) type GetPjrtApiFn = unsafe extern "C" fn() -> *const PJRT_Api;
 #[repr(C)]
 #[allow(non_camel_case_types)]
 pub(crate) struct PJRT_Extension_Base {
-    _private: [u8; 0],
+    pub(crate) struct_size: usize,
+    /// `PJRT_Extension_Type`
+    pub(crate) extension_type: u32,
+    pub(crate) next: *mut PJRT_Extension_Base,
+}
+
+/// `PJRT_Extension_Type_FFI`
+pub(crate) const PJRT_EXTENSION_TYPE_FFI: u32 = 5;
+
+/// `PJRT_FFI_Register_Handler_Args` (FFI extension version 3).
+#[repr(C)]
+#[allow(non_camel_case_types)]
+pub(crate) struct PJRT_FFI_Register_Handler_Args {
+    pub(crate) struct_size: usize,
+    pub(crate) target_name: *const c_char,
+    pub(crate) target_name_size: usize,
+    pub(crate) handler: *mut c_void,
+    pub(crate) platform_name: *const c_char,
+    pub(crate) platform_name_size: usize,
+    /// `PJRT_FFI_Handler_TraitsBits`
+    pub(crate) traits: u32,
+}
+
+/// `PJRT_FFI_Extension`: registration of foreign functions for
+/// `stablehlo.custom_call`.
+#[repr(C)]
+#[allow(non_camel_case_types)]
+pub(crate) struct PJRT_FFI_Extension {
+    pub(crate) base: PJRT_Extension_Base,
+    pub(crate) type_register: *const c_void,
+    pub(crate) user_data_add: *const c_void,
+    pub(crate) register_handler:
+        Option<unsafe extern "C" fn(*mut PJRT_FFI_Register_Handler_Args) -> *mut PJRT_Error>,
 }
 
 #[repr(C)]
