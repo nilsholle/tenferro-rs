@@ -302,6 +302,28 @@ pub enum ExtensionStandardLowering {
     Unsupported,
 }
 
+/// A foreign function executing an extension op in an XLA program, see
+/// [`ExtensionOp::xla_custom_call`].
+///
+/// # Examples
+///
+/// ```
+/// use tenferro_ops::ext_op::XlaCustomCall;
+///
+/// let call = XlaCustomCall {
+///     target: "my_kernel".to_string(),
+///     attributes: vec![("handle".to_string(), 7)],
+/// };
+/// assert_eq!(call.attributes[0].1, 7);
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct XlaCustomCall {
+    /// Name the function is registered under.
+    pub target: String,
+    /// 64-bit integer attributes of the call, by name.
+    pub attributes: Vec<(String, i64)>,
+}
+
 /// The contract every out-of-tree extension primitive must satisfy.
 ///
 /// Implementations appear in the core graph as
@@ -561,6 +583,19 @@ pub trait ExtensionOp: Debug + Send + Sync + 'static {
         _input_shapes: &[&[SymDim]],
     ) -> ExtensionLoweringResult {
         Ok(ExtensionStandardLowering::Unsupported)
+    }
+
+    /// A foreign function that executes this op in a compiled XLA program.
+    ///
+    /// The XLA lowerer then emits a `stablehlo.custom_call` with the typed
+    /// FFI calling convention (API version 4) instead of expanding the op
+    /// into standard operations: the inputs are the operands, the outputs
+    /// the results, and `attributes` go into the call's backend
+    /// configuration. The function has to be registered with the PJRT
+    /// client that runs the program (the FFI extension of the plugin).
+    /// Backends that cannot call foreign functions ignore this hook.
+    fn xla_custom_call(&self) -> Option<XlaCustomCall> {
+        None
     }
 
     /// Optionally return an equivalent op that produces only live outputs.
