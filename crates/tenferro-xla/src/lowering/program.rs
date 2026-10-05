@@ -349,6 +349,11 @@ fn lower_extension_operation(
     input_values: &[Value],
     emitter: &mut Emitter,
 ) -> Result<Vec<Value>> {
+    // A foreign function: one call instead of an expansion.
+    if let Some(call) = op.xla_custom_call() {
+        return lower_custom_call(program, op, operation, &call, input_values, emitter);
+    }
+
     let input_dtypes = input_values
         .iter()
         .map(|value| value.ty.dtype)
@@ -500,6 +505,88 @@ fn lower_extension_operation(
         }
     }
     Ok(sub_outputs)
+}
+
+/// `stablehlo.custom_call` with the typed FFI convention (API version 4)
+/// for an extension op that names a foreign function.
+fn lower_custom_call(
+    program: &SemanticProgram,
+    op: &dyn tenferro_ops::ext_op::ExtensionOp,
+    operation: SemanticOperationView<'_>,
+    call: &tenferro_ops::ext_op::XlaCustomCall,
+    input_values: &[Value],
+    emitter: &mut Emitter,
+) -> Result<Vec<Value>> {
+    let valid_name = |name: &str| {
+        !name.is_empty()
+            && name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
+    };
+    if !valid_name(&call.target) || !call.attributes.iter().all(|(name, _)| valid_name(name)) {
+        return Err(Error::InvalidProgram {
+            message: format!(
+                "extension family {:?} names an invalid custom call {:?}",
+                op.family_id(),
+                call
+            ),
+        });
+    }
+    let mut outputs = Vec::with_capacity(operation.outputs().len());
+    for (output_idx, &output) in operation.outputs().iter().enumerate() {
+        let ty = semantic_value_type(
+            program,
+            output,
+            op.family_id(),
+            output_idx,
+            "custom call output",
+        )?;
+        outputs.push(Value {
+            name: String::new(),
+            ty,
+        });
+    }
+    let result = emitter.value();
+    let names = match outputs.len() {
+        1 => result.clone(),
+        count => format!("{result}:{count}"),
+    };
+    for (index, value) in outputs.iter_mut().enumerate() {
+        value.name = if operation.outputs().len() == 1 {
+            result.clone()
+        } else {
+            format!("{result}#{index}")
+        };
+    }
+    let attributes = call
+        .attributes
+        .iter()
+        .map(|(name, value)| format!("{name} = {value} : i64"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let operands = input_values
+        .iter()
+        .map(|value| value.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let operand_types = input_values
+        .iter()
+        .map(|value| format_tensor_type(&value.ty))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let result_types = outputs
+        .iter()
+        .map(|value| format_tensor_type(&value.ty))
+        .collect::<Vec<_>>();
+    let result_types = match result_types.as_slice() {
+        [single] => single.clone(),
+        many => format!("({})", many.join(", ")),
+    };
+    emitter.line(format!(
+        "{names} = stablehlo.custom_call @{}({operands}) {{api_version = 4 : i32, backend_config = {{{attributes}}}}} : ({operand_types}) -> {result_types}",
+        call.target
+    ));
+    Ok(outputs)
 }
 
 fn build_standard_semantic_subprogram(
