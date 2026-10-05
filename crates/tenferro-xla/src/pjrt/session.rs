@@ -245,6 +245,64 @@ impl PjrtSession {
         Self::new(PjrtPlugin::load_path(path)?)
     }
 
+    /// Register a foreign function (XLA FFI handler) under `name`, so that
+    /// programs compiled afterwards can call it with
+    /// `stablehlo.custom_call @name(...) {api_version = 4 : i32, ...}`.
+    /// `platform`: the XLA platform the handler is for (`"CUDA"`, `"Host"`).
+    /// `command_buffer_compatible`: the handler may run inside a command
+    /// buffer (CUDA graph).
+    ///
+    /// # Safety
+    ///
+    /// `handler` has to be an `XLA_FFI_Handler` (`XLA_FFI_Error*
+    /// (*)(XLA_FFI_CallFrame*)`) of a library that stays loaded as long as
+    /// the plugin, built for the FFI ABI of this plugin.
+    ///
+    /// # Errors
+    ///
+    /// `Error::PjrtCall` if the plugin has no FFI extension or rejects the
+    /// registration.
+    pub unsafe fn register_ffi_handler(
+        &self,
+        name: &str,
+        handler: *mut std::ffi::c_void,
+        platform: &str,
+        command_buffer_compatible: bool,
+    ) -> Result<()> {
+        let api = self.inner.api();
+        let mut extension = api.extension_start;
+        // SAFETY: the extension list is owned by the plugin; every entry
+        // starts with a `PJRT_Extension_Base`.
+        while !extension.is_null()
+            && unsafe { (*extension).extension_type } != PJRT_EXTENSION_TYPE_FFI
+        {
+            extension = unsafe { (*extension).next };
+        }
+        let missing = || Error::PjrtCall {
+            call: "PJRT_FFI_Register_Handler",
+            message: "the plugin has no FFI extension".to_string(),
+        };
+        if extension.is_null() {
+            return Err(missing());
+        }
+        // SAFETY: an extension of type FFI is a `PJRT_FFI_Extension`.
+        let register = unsafe { (*extension.cast::<PJRT_FFI_Extension>()).register_handler }
+            .ok_or_else(missing)?;
+        let mut args = PJRT_FFI_Register_Handler_Args {
+            struct_size: mem::size_of::<PJRT_FFI_Register_Handler_Args>(),
+            target_name: name.as_ptr().cast(),
+            target_name_size: name.len(),
+            handler,
+            platform_name: platform.as_ptr().cast(),
+            platform_name_size: platform.len(),
+            traits: u32::from(command_buffer_compatible),
+        };
+        // SAFETY: `args` matches the plugin's argument struct; the strings
+        // are passed with their lengths.
+        let error = unsafe { register(&mut args) };
+        self.inner.check("PJRT_FFI_Register_Handler", error)
+    }
+
     /// Peak number of bytes the device allocator has had in use since the
     /// client was created, if the plugin reports it (the CPU plugin does not).
     pub fn peak_device_bytes(&self) -> Option<u64> {
