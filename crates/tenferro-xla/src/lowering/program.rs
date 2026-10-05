@@ -965,8 +965,16 @@ fn lower_dot_general(
             format_usize_list(&config.rhs_batch_dims)
         )
     };
+    // XLA's default precision lets GPUs run float32 products in reduced
+    // precision (TensorFloat-32: relative errors of 1e-4 instead of 1e-7).
+    // Ask for the full precision unless TENFERRO_XLA_DOT_PRECISION=default
+    // trades it for speed.
+    let precision = match std::env::var("TENFERRO_XLA_DOT_PRECISION").as_deref() {
+        Ok("default" | "DEFAULT") => "DEFAULT",
+        _ => "HIGHEST",
+    };
     emitter.line(format!(
-        "{dot} = stablehlo.dot_general {}, {}, {batching}contracting_dims = {} x {}, precision = [DEFAULT, DEFAULT] : ({}, {}) -> {}",
+        "{dot} = stablehlo.dot_general {}, {}, {batching}contracting_dims = {} x {}, precision = [{precision}, {precision}] : ({}, {}) -> {}",
         lhs.name,
         rhs.name,
         format_usize_list(&config.lhs_contracting_dims),
