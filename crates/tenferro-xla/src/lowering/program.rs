@@ -582,8 +582,34 @@ fn lower_custom_call(
         [single] => single.clone(),
         many => format!("({})", many.join(", ")),
     };
+    // Foreign functions read and write their buffers in row-major order:
+    // fix that layout for every operand and result, so that XLA inserts the
+    // copies a tensor in another layout needs (program inputs, for example,
+    // keep the column-major order in which tenferro transfers them).
+    let row_major = |ty: &TensorType| {
+        let rank = ty.shape.len();
+        if rank == 0 {
+            return "dense<> : tensor<0xindex>".to_string();
+        }
+        let axes = (0..rank)
+            .rev()
+            .map(|a| a.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("dense<[{axes}]> : tensor<{rank}xindex>")
+    };
+    let operand_layouts = input_values
+        .iter()
+        .map(|value| row_major(&value.ty))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let result_layouts = outputs
+        .iter()
+        .map(|value| row_major(&value.ty))
+        .collect::<Vec<_>>()
+        .join(", ");
     emitter.line(format!(
-        "{names} = stablehlo.custom_call @{}({operands}) {{api_version = 4 : i32, backend_config = {{{attributes}}}}} : ({operand_types}) -> {result_types}",
+        "{names} = stablehlo.custom_call @{}({operands}) {{api_version = 4 : i32, backend_config = {{{attributes}}}, operand_layouts = [{operand_layouts}], result_layouts = [{result_layouts}]}} : ({operand_types}) -> {result_types}",
         call.target
     ));
     Ok(outputs)
