@@ -231,11 +231,12 @@ struct PjrtClient<'a> {
 
 impl<'a> PjrtClient<'a> {
     fn create(api: &'a PJRT_Api) -> Result<Self> {
+        let options = super::ClientOptions::from_env()?;
         let mut args = PJRT_Client_Create_Args {
             struct_size: mem::size_of::<PJRT_Client_Create_Args>(),
             extension_start: ptr::null_mut(),
-            create_options: ptr::null(),
-            num_options: 0,
+            create_options: options.as_ptr(),
+            num_options: options.len(),
             kv_get_callback: ptr::null(),
             kv_get_user_arg: ptr::null_mut(),
             kv_put_callback: ptr::null(),

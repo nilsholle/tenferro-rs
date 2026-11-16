@@ -549,3 +549,18 @@ pub(crate) struct PJRT_Device_MemoryStats_Args {
 
 pub(crate) type PjrtDeviceMemoryStats =
     unsafe extern "C" fn(*mut PJRT_Device_MemoryStats_Args) -> *mut PJRT_Error;
+
+/// `PJRT_NamedValue` of `pjrt_c_api.h`: one client create option.
+#[repr(C)]
+#[allow(non_camel_case_types)]
+pub(crate) struct PJRT_NamedValue {
+    pub(crate) struct_size: usize,
+    pub(crate) extension_start: *mut PJRT_Extension_Base,
+    pub(crate) name: *const std::ffi::c_char,
+    pub(crate) name_size: usize,
+    /// 0 string, 1 int64, 2 int64 list, 3 float, 4 bool
+    pub(crate) kind: i32,
+    /// union of `const char*`, `int64_t`, `const int64_t*`, `float`, `bool`
+    pub(crate) value: u64,
+    pub(crate) value_size: usize,
+}
